@@ -39,7 +39,7 @@ object JvmPlatformConfigurator : PlatformConfiguratorBase(
         SuspendInFunInterfaceChecker(),
         BadInheritedJavaSignaturesChecker,
         JvmMultifileClassStateChecker,
-        SynchronizedOnInlineMethodChecker,
+        SynchronizedApplicabilityChecker,
         DefaultCheckerInTailrec,
         FunctionDelegateMemberNameClashChecker,
         ClassInheritsJavaSealedClassChecker
@@ -57,7 +57,8 @@ object JvmPlatformConfigurator : PlatformConfiguratorBase(
         RuntimeAssertionsOnExtensionReceiverCallChecker,
         ApiVersionIsAtLeastArgumentsChecker,
         InconsistentOperatorFromJavaCallChecker,
-        PolymorphicSignatureCallChecker
+        PolymorphicSignatureCallChecker,
+        SynchronizedCallChecked,
     ),
 
     additionalTypeCheckers = listOf(
