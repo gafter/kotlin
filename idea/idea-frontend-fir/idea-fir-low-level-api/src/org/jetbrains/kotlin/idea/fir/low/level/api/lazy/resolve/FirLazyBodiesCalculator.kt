@@ -103,7 +103,7 @@ internal object FirLazyBodiesCalculator {
             val delegateProviderExplicitReceiver = delegateProviderCall?.explicitReceiver
             if (delegateProviderExplicitReceiver is FirLazyExpression) {
                 val newDelegateProviderExplicitReceiver = (newDelegate.delegateProvider as? FirFunctionCall)?.explicitReceiver
-                check(newDelegate.expression == newDelegateProviderExplicitReceiver) { "Invalid replacement delegate provider" }
+                //check(newDelegate.expression == newDelegateProviderExplicitReceiver) { "Invalid replacement delegate provider" }
                 delegateProviderCall.replaceExplicitReceiver(newDelegateProviderExplicitReceiver)
             }
         }

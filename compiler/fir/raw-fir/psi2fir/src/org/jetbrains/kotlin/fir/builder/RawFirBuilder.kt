@@ -210,7 +210,7 @@ open class RawFirBuilder(
 
         private fun KtElement?.toFirExpression(
             errorReason: String,
-            kind: DiagnosticKind = DiagnosticKind.ExpressionExpected,
+            kind: DiagnosticKind = DiagnosticKind.ExpressionExpected
         ): FirExpression {
             if (stubMode) {
                 return buildExpressionStub()
@@ -1417,29 +1417,34 @@ open class RawFirBuilder(
                 if (this@toFirProperty.isLocal) {
                     isLocal = true
                     symbol = FirPropertySymbol(propertyName)
-                    val delegateFirExpression = this@toFirProperty.delegate
-                        ?.expression?.toFirExpression("Incorrect delegate expression")
-
-                    val delegateBuilder = delegateFirExpression?.let {
-                        FirWrappedDelegateExpressionBuilder().apply {
-                            source = it.source?.fakeElement(FirFakeSourceElementKind.WrappedDelegate)
-                            expression = it
-                        }
-                    }
-
                     status = FirDeclarationStatusImpl(Visibilities.Local, Modality.FINAL).apply {
                         isLateInit = hasModifier(LATEINIT_KEYWORD)
                     }
 
-                    generateAccessorsByDelegate(
-                        delegateBuilder,
-                        baseModuleData,
-                        ownerRegularOrAnonymousObjectSymbol = null,
-                        ownerRegularClassTypeParametersCount = null,
-                        isExtension = false,
-                        stubMode = stubMode,
-                        receiver = delegateFirExpression
-                    )
+                    if (hasDelegate()) {
+                        fun extractDelegateExpression() =
+                            this@toFirProperty.delegate?.expression.toFirExpression("Incorrect delegate expression")
+
+                        val delegateBuilder = FirWrappedDelegateExpressionBuilder().apply {
+                            val delegateFirExpression = extractDelegateExpression()
+                            source = delegateFirExpression.source?.fakeElement(FirFakeSourceElementKind.WrappedDelegate)
+                            expression = delegateFirExpression
+                        }
+
+                        val receiver = this@RawFirBuilder.withDefaultSourceElementKind(FirFakeSourceElementKind.WrappedDelegate) {
+                            extractDelegateExpression() //???
+                        }
+
+                        generateAccessorsByDelegate(
+                            delegateBuilder,
+                            baseModuleData,
+                            ownerRegularOrAnonymousObjectSymbol = null,
+                            ownerRegularClassTypeParametersCount = null,
+                            isExtension = false,
+                            stubMode = stubMode,
+                            receiver = receiver
+                        )
+                    }
                 } else {
                     isLocal = false
                     receiverTypeRef = receiverTypeReference.convertSafe()
@@ -1447,23 +1452,6 @@ open class RawFirBuilder(
                     dispatchReceiverType = currentDispatchReceiverType()
                     extractTypeParametersTo(this, symbol)
                     withCapturedTypeParameters(true, this.typeParameters) {
-                        val delegateFirExpression = if (hasDelegate()) {
-                            when (mode) {
-                                BodyBuildingMode.NORMAL -> this@toFirProperty.delegate?.expression.toFirExpression("Should have delegate")
-                                BodyBuildingMode.STUBS -> buildExpressionStub()
-                                BodyBuildingMode.LAZY_BODIES -> this@toFirProperty.delegate?.expression?.let {
-                                    buildLazyExpression { source = it.toFirSourceElement() }
-                                } ?: null.toFirExpression("Should have delegate")
-                            }
-                        } else null
-
-                        val delegateBuilder = delegateFirExpression?.let {
-                            FirWrappedDelegateExpressionBuilder().apply {
-                                source = it.source?.fakeElement(FirFakeSourceElementKind.WrappedDelegate)
-                                expression = it
-                            }
-                        }
-
                         getter = this@toFirProperty.getter.toFirPropertyAccessor(this@toFirProperty, propertyType, isGetter = true)
                         setter = this@toFirProperty.setter.toFirPropertyAccessor(this@toFirProperty, propertyType, isGetter = false)
 
@@ -1476,15 +1464,35 @@ open class RawFirBuilder(
                             isExternal = hasModifier(EXTERNAL_KEYWORD)
                         }
 
-                        generateAccessorsByDelegate(
-                            delegateBuilder,
-                            baseModuleData,
-                            ownerRegularOrAnonymousObjectSymbol,
-                            ownerRegularClassTypeParametersCount,
-                            isExtension = receiverTypeReference != null,
-                            stubMode = stubMode,
-                            receiver = delegateFirExpression
-                        )
+                        if (hasDelegate()) {
+                            fun extractDelegateExpression() = when (mode) {
+                                BodyBuildingMode.NORMAL -> this@toFirProperty.delegate?.expression.toFirExpression("Should have delegate")
+                                BodyBuildingMode.STUBS -> buildExpressionStub()
+                                BodyBuildingMode.LAZY_BODIES -> this@toFirProperty.delegate?.expression?.let {
+                                    buildLazyExpression { source = it.toFirSourceElement() }
+                                } ?: null.toFirExpression("Should have delegate")
+                            }
+
+                            val delegateBuilder = FirWrappedDelegateExpressionBuilder().apply {
+                                val delegateExpression = extractDelegateExpression()
+                                source = delegateExpression.source?.fakeElement(FirFakeSourceElementKind.WrappedDelegate)
+                                expression = extractDelegateExpression()
+                            }
+
+                            val receiver = this@RawFirBuilder.withDefaultSourceElementKind(FirFakeSourceElementKind.WrappedDelegate) {
+                                extractDelegateExpression() //???
+                            }
+
+                            generateAccessorsByDelegate(
+                                delegateBuilder,
+                                baseModuleData,
+                                ownerRegularOrAnonymousObjectSymbol,
+                                ownerRegularClassTypeParametersCount,
+                                isExtension = receiverTypeReference != null,
+                                stubMode = stubMode,
+                                receiver = receiver
+                            )
+                        }
                     }
                 }
                 extractAnnotationsTo(this)
