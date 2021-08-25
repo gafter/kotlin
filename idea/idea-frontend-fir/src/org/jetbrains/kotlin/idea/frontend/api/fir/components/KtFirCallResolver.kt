@@ -5,6 +5,7 @@
 
 package org.jetbrains.kotlin.idea.frontend.api.fir.components
 
+import com.intellij.psi.PsiElement
 import org.jetbrains.kotlin.builtins.StandardNames
 import org.jetbrains.kotlin.fir.FirSourceElement
 import org.jetbrains.kotlin.fir.analysis.diagnostics.FirDiagnostic
@@ -17,6 +18,7 @@ import org.jetbrains.kotlin.fir.references.FirResolvedNamedReference
 import org.jetbrains.kotlin.fir.references.FirSuperReference
 import org.jetbrains.kotlin.fir.references.impl.FirSimpleNamedReference
 import org.jetbrains.kotlin.fir.resolve.calls.FirErrorReferenceWithCandidate
+import org.jetbrains.kotlin.fir.resolve.calls.FirSyntheticPropertySymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirNamedFunctionSymbol
 import org.jetbrains.kotlin.fir.types.ConeClassLikeType
 import org.jetbrains.kotlin.fir.types.ConeKotlinErrorType
@@ -36,6 +38,7 @@ import org.jetbrains.kotlin.idea.frontend.api.symbols.markers.KtSymbolWithMember
 import org.jetbrains.kotlin.idea.frontend.api.tokens.ValidityToken
 import org.jetbrains.kotlin.idea.frontend.api.withValidityAssertion
 import org.jetbrains.kotlin.idea.references.FirReferenceResolveHelper
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.util.OperatorNameConventions
@@ -46,6 +49,36 @@ internal class KtFirCallResolver(
     override val token: ValidityToken,
 ) : KtCallResolver(), KtFirAnalysisSessionComponent {
     private val diagnosticCache = mutableListOf<FirDiagnostic>()
+
+    override fun resolveAccessorCall(call: KtSimpleNameExpression): KtCall? = withValidityAssertion {
+        when (val fir = call.getOrBuildFir(firResolveState)) {
+            is FirResolvedNamedReference -> {
+                val syntheticPropertySymbol = fir.resolvedSymbol as? FirSyntheticPropertySymbol ?: return null
+                val setterValue = findAssignment(call, call.parent)?.right
+                val accessor = if (setterValue != null)
+                    syntheticPropertySymbol.setterSymbol?.fir
+                else
+                    syntheticPropertySymbol.getterSymbol?.fir
+                accessor ?: return null
+                val target = KtSuccessCallTarget(analysisSession.firSymbolBuilder.functionLikeBuilder.buildFunctionLikeSymbol(accessor))
+                val ktArgumentMapping = LinkedHashMap<KtExpression, KtValueParameterSymbol>()
+                if (setterValue != null) {
+                    val setterParameterSymbol = accessor.valueParameters.single().buildSymbol(firSymbolBuilder) as KtValueParameterSymbol
+                    ktArgumentMapping[setterValue] = setterParameterSymbol
+                }
+                return KtFunctionCall(ktArgumentMapping, target)
+            }
+            else -> return null
+        }
+    }
+
+    // TODO: maybe part of frontend-independent somehow?
+    private tailrec fun findAssignment(prev: PsiElement?, element: PsiElement?): KtBinaryExpression? = when (element) {
+        is KtBinaryExpression -> if (element.left == prev && element.operationToken == KtTokens.EQ) element else null
+        is KtQualifiedExpression -> findAssignment(element, element.parent)
+        is KtSimpleNameExpression -> findAssignment(element, element.parent)
+        else -> null
+    }
 
     override fun resolveCall(call: KtBinaryExpression): KtCall? = withValidityAssertion {
         when (val fir = call.getOrBuildFir(firResolveState)) {
