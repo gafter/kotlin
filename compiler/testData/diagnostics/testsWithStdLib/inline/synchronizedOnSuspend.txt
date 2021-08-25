@@ -1,7 +1,0 @@
-package
-
-public val c: kotlin.Unit
-public val d: suspend () -> kotlin.Unit
-public fun builder(/*0*/ c: suspend () -> kotlin.Unit): kotlin.Unit
-@kotlin.jvm.Synchronized public suspend fun foo(/*0*/ f: () -> kotlin.Unit): kotlin.Unit
-
