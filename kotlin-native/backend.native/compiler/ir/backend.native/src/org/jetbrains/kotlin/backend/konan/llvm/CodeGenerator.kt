@@ -389,7 +389,7 @@ internal class StackLocalsManagerImpl(
 
 internal class FunctionGenerationContext(val function: LLVMValueRef,
                                          val codegen: CodeGenerator,
-                                         startLocation: LocationInfo?,
+                                         private val startLocation: LocationInfo?,
                                          private val endLocation: LocationInfo?,
                                          private val switchToRunnable: Boolean,
                                          internal val irFunction: IrFunction? = null): ContextUtils {
@@ -1364,7 +1364,6 @@ internal class FunctionGenerationContext(val function: LLVMValueRef,
                 // Zero-init slots.
                 val slotsMem = bitcast(kInt8Ptr, slots)
                 memset(slotsMem, 0, slotCount * codegen.runtime.pointerSize)
-                call(context.llvm.enterFrameFunction, listOf(slots, Int32(vars.skipSlots).llvm, Int32(slotCount).llvm))
             }
             addPhiIncoming(slotsPhi!!, prologueBb to slots)
             memScoped {
@@ -1388,8 +1387,25 @@ internal class FunctionGenerationContext(val function: LLVMValueRef,
             br(stackLocalsInitBb)
         }
 
+        val afterStackLocalsInit = if (needSlots) {
+            /**
+             * EnterFrame call need to have !dbg, otherwise llvm rejects full module debug information
+             * On the other hand, we don't want prologue to have debug info, because it can lead to debugger stops in
+             * places with inconsistent stack layout. So for simplicity we move this call to separate block.
+             */
+            basicBlockInFunction("enter_frame", startLocation).apply {
+                LLVMMoveBasicBlockAfter(this, stackLocalsInitBb)
+                appendingTo(this) {
+                    call(context.llvm.enterFrameFunction, listOf(slotsPhi!!, Int32(vars.skipSlots).llvm, Int32(slotCount).llvm))
+                    br(entryBb)
+                }
+            }
+        } else {
+            entryBb
+        }
+
         appendingTo(stackLocalsInitBb) {
-            br(entryBb)
+            br(afterStackLocalsInit)
         }
 
         appendingTo(epilogueBb) {
